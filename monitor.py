@@ -44,6 +44,7 @@ def send_discord(title, description, url=None):
     )
     response.raise_for_status()
 
+
 def check_stock(product):
     response = requests.get(
         product["url"],
@@ -57,31 +58,25 @@ def check_stock(product):
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # 다른 페이지로 이동했거나 상품이 사라졌으면 무시
     if product["id"] not in response.url:
         return "unknown"
 
-    # 상품 구매 영역에 한정하여 품절 신호 확인
-    area = soup.select_one(".xans-product-detail")
+    # 상품 구매 영역에서 SOLD OUT 요소 찾기
+    area = soup.select_one(".xans-product-action")
     if not area:
         return "unknown"
 
-    text = area.get_text(" ", strip=True)
+    sold_out = area.select_one("span.sold_out")
+    if not sold_out:
+        return "unknown"
 
-    if re.search(r"SOLD\s*OUT", text, re.I):
-        return "sold_out"
+    classes = sold_out.get("class", [])
 
-    # SOLD OUT 문구가 없고 구매 버튼이 확인되는 경우
-    buy_buttons = area.select(
-        "a[href*='product_submit'], "
-        "a[onclick*='product_submit'], "
-        "button[onclick*='product_submit']"
-    )
-
-    if buy_buttons:
+    if "displaynone" in classes:
         return "in_stock"
 
-    return "unknown"
+    return "sold_out"
+
 
 def main():
     if "--test" in sys.argv:
