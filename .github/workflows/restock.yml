@@ -33,6 +33,7 @@ jobs:
           DISCORD_USER_ID: ${{ secrets.DISCORD_USER_ID }}
         run: python monitor.py
 
+      
       - name: Save stock state
         run: |
           git config user.name "github-actions[bot]"
@@ -40,8 +41,10 @@ jobs:
           git add state.json
           if ! git diff --cached --quiet; then
             git commit -m "Update stock status"
-            git push
+            git pull --rebase origin main
+            git push origin HEAD:main
           fi
+
 
       - name: Test Discord notification
         if: ${{ github.event_name == 'workflow_dispatch' }}
