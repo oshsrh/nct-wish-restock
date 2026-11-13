@@ -16,10 +16,6 @@ PRODUCTS = {
     "LOG IN Fanlight Key Ring": {
         "id": "26098",
         "url": "https://smtownandstore.com/product/nct-wish-asia-tour-log-in-fanlight-key-ring/26098/category/53/"
-    },
-    "Bakery Wish Doll TEST": {
-        "id": "28170",
-        "url": "https://smtownandstore.com/product/2026-nct-wish-wish-bakery-pop-up-bakery-wish-doll/28170/category/53/display/1/"
     }
 }
 
