@@ -2,73 +2,136 @@
 import os
 import json
 import re
+import sys
 import requests
 from bs4 import BeautifulSoup
 from pathlib import Path
 
 PRODUCTS = {
-    "OUR WISH Scrunchie":
-        "https://smtownandstore.com/product/2025-nct-wish-1st-concert-tour-into-the-wish-our-wish-scrunchie/27705/category/53/",
-    "LOG IN Fanlight Key Ring":
-        "https://smtownandstore.com/product/nct-wish-asia-tour-log-in-fanlight-key-ring/26098/category/53/"
+    "OUR WISH Scrunchie": {
+        "id": "27705",
+        "url": "https://smtownandstore.com/product/2025-nct-wish-1st-concert-tour-into-the-wish-our-wish-scrunchie/27705/category/53/"
+    },
+    "LOG IN Fanlight Key Ring": {
+        "id": "26098",
+        "url": "https://smtownandstore.com/product/nct-wish-asia-tour-log-in-fanlight-key-ring/26098/category/53/"
+    }
 }
 
 WEBHOOK = os.environ["DISCORD_WEBHOOK_URL"]
 USER_ID = os.environ["DISCORD_USER_ID"]
 STATE_FILE = Path("state.json")
 
-def check_stock(url):
-    response = requests.get(
-        url,
-        headers={"User-Agent": "Mozilla/5.0"},
+def send_discord(title, description, url=None):
+    payload = {
+        "content": f"<@{USER_ID}>",
+        "allowed_mentions": {
+            "parse": [],
+            "users": [USER_ID]
+        },
+        "embeds": [{
+            "title": title,
+            "description": description,
+            "color": 5763719,
+            **({"url": url} if url else {})
+        }]
+    }
+
+    response = requests.post(
+        WEBHOOK,
+        json=payload,
         timeout=20
     )
     response.raise_for_status()
 
+def check_stock(product):
+    response = requests.get(
+        product["url"],
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept-Language": "ko-KR,ko;q=0.9"
+        },
+        timeout=25
+    )
+    response.raise_for_status()
+
     soup = BeautifulSoup(response.text, "html.parser")
-    text = soup.get_text(" ", strip=True).lower()
 
-    # 보수적 판별: 모호한 경우 알림을 보내지 않음
-    sold_out = bool(re.search(r"sold\s*out|품절", text))
-    return "sold_out" if sold_out else "unknown"
+    # 다른 페이지로 이동했거나 상품이 사라졌으면 무시
+    if product["id"] not in response.url:
+        return "unknown"
 
-def notify(name, url):
-    message = {
-        "content": f"<@{USER_ID}> 💚 **NCT WISH 재입고 감지!**",
-        "embeds": [{
-            "title": name,
-            "description": "상품이 구매 가능한 상태로 변경되었습니다!",
-            "url": url,
-            "color": 5763719
-        }],
-        "allowed_mentions": {
-            "parse": [],
-            "users": [USER_ID]
-        }
-    }
-    r = requests.post(WEBHOOK, json=message, timeout=20)
-    r.raise_for_status()
+    # 상품 구매 영역에 한정하여 품절 신호 확인
+    area = soup.select_one(".xans-product-detail")
+    if not area:
+        return "unknown"
+
+    text = area.get_text(" ", strip=True)
+
+    if re.search(r"SOLD\s*OUT", text, re.I):
+        return "sold_out"
+
+    # SOLD OUT 문구가 없고 구매 버튼이 확인되는 경우
+    buy_buttons = area.select(
+        "a[href*='product_submit'], "
+        "a[onclick*='product_submit'], "
+        "button[onclick*='product_submit']"
+    )
+
+    if buy_buttons:
+        return "in_stock"
+
+    return "unknown"
 
 def main():
-    state = {}
+    if "--test" in sys.argv:
+        send_discord(
+            "💚 NCT WISH 알림 테스트 성공!",
+            "Discord 멘션 및 푸시 알림 테스트입니다."
+        )
+        print("Discord test message sent!")
+        return
+
     if STATE_FILE.exists():
-        state = json.loads(STATE_FILE.read_text())
+        state = json.loads(
+            STATE_FILE.read_text(encoding="utf-8")
+        )
+    else:
+        state = {}
 
-    for name, url in PRODUCTS.items():
-        current = check_stock(url)
-        previous = state.get(name)
+    failed = False
 
-        print(f"{name}: {previous} -> {current}")
+    for name, product in PRODUCTS.items():
+        try:
+            current = check_stock(product)
+            previous = state.get(name)
 
-        if previous == "sold_out" and current == "in_stock":
-            notify(name, url)
+            print(f"{name}: {previous} -> {current}")
 
-        if current != "unknown":
+            if current == "unknown":
+                print("Stock status uncertain; skipped.")
+                continue
+
+            if current == "in_stock" and previous != "in_stock":
+                send_discord(
+                    "💚 NCT WISH 재입고 감지!",
+                    f"**{name}**\n구매 가능 상태가 감지되었습니다. 상품 페이지를 확인하세요!",
+                    product["url"]
+                )
+
             state[name] = current
 
+        except Exception as error:
+            print(f"ERROR checking {name}: {error}")
+            failed = True
+
     STATE_FILE.write_text(
-        json.dumps(state, ensure_ascii=False, indent=2)
+        json.dumps(state, ensure_ascii=False, indent=2),
+        encoding="utf-8"
     )
+
+    if failed:
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
