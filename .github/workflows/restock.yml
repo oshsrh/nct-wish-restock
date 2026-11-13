@@ -46,9 +46,4 @@ jobs:
           fi
 
 
-      - name: Test Discord notification
-        if: ${{ github.event_name == 'workflow_dispatch' }}
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          DISCORD_USER_ID: ${{ secrets.DISCORD_USER_ID }}
-        run: python monitor.py --test
+
